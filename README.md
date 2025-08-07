@@ -1,27 +1,52 @@
 # Map AI - Feature Matching & Map Cutting Service
 
-This is a containerized service that provides comprehensive map processing functionalities:
-1. **Feature Matching** for schematic maps using KAZE features
-2. **Georeferenced Map Cutting** from multiple sources (OSM, Dutch BGT, etc.)
-3. **Map Classification** using ResNet-50 based neural networks
-4. **Combined Workflows** that integrate cutting and matching
+This is a containerized service that provides comprehensive map processing functionalities using a modern, refactored architecture:
 
-All services are optimized for technical workflows and GIS applications.
+1. **Feature Matching** for schematic maps using KAZE features and aerial imagery using GIM+Roma models
+2. **Georeferenced Map Cutting** from multiple sources (OSM, Dutch BGT, BRT-A, Luchtfoto, etc.)
+3. **Combined Workflows** that integrate cutting and matching with automatic buffer optimization
+4. **Session Management** for tracking and organizing processing results
 
-## Project Structure
+All services are optimized for technical workflows, GIS applications, and production environments.
+
+## Project Architecture
+
+The application has been refactored into a clean, modular architecture:
 
 ```
-feature_matching_api/
-├── app.py              ← FastAPI orchestrator with all endpoints
-├── matcher.py          ← Feature matching logic (KAZE, optimized for schematic maps)
-├── cutter.py           ← Map cutting logic (OSM, BGT with geometric buffering)
-├── classifier_model.py ← Map classification model definitions
-├── classifier_config.py ← Configuration for classifier
-├── requirements.txt    ← Python dependencies
-├── Dockerfile         ← Docker configuration  
-├── docker-compose.yml ← Docker Compose configuration
-└── README.md          ← This file
-
+map_feature_matching_model/
+├── app_refactored.py              ← FastAPI orchestrator with all endpoints
+├── services/                      ← Core business logic services
+│   ├── feature_matching_service.py    ← Feature matching logic (KAZE + GIM+Roma)
+│   ├── map_cutting_service.py         ← Map cutting and tile downloading
+│   ├── image_processing_service.py    ← Image manipulation and optimization
+│   ├── tile_service.py                ← Tile downloading and stitching
+│   ├── coordinate_transformation_service.py ← Coordinate system transformations
+│   ├── georeferencing_service.py      ← Georeferencing and world file handling
+│   ├── visualization_service.py       ← Result visualization and overlays
+│   ├── matching_service.py            ← Core matching algorithms
+│   └── response_service.py            ← Response formatting and file management
+├── utils/                         ← Shared utilities
+│   ├── coordinate_utils.py            ← Coordinate calculations and transformations
+│   ├── geometry_utils.py              ← Geometric operations and buffering
+│   ├── file_utils.py                  ← File I/O and management
+│   ├── validation_utils.py            ← Input validation and sanitization
+│   ├── session_utils.py               ← Session management
+│   ├── response_utils.py              ← Response formatting helpers
+│   ├── worldfile_utils.py             ← World file (.pgw) operations
+│   ├── tile_server_utils.py           ← Tile server configurations
+│   └── memory_utils.py                ← Memory optimization utilities
+├── models/                        ← Data models and schemas
+│   ├── request_models.py              ← Request data models
+│   └── response_models.py             ← Response data models
+├── third_party/                   ← Third-party components
+│   ├── roma_minimal.py                ← GIM+Roma matcher implementation
+│   ├── setup_roma.py                  ← ROMA model setup script
+│   └── RoMa/                          ← RoMa repository (auto-downloaded)
+├── requirements.txt               ← Python dependencies
+├── Dockerfile                     ← Docker configuration  
+├── docker-compose.yml             ← Docker Compose configuration
+└── README.md                      ← This file
 ```
 
 ## Key Features
@@ -33,6 +58,7 @@ feature_matching_api/
 - **Format Flexibility**: GeoJSON, WKT, coordinate lists
 - **Georeferencing**: Automatic world file (.pgw) generation
 - **Overlay Combinations**: BGT+BAG, BRT-A+BAG, etc.
+- **Smart Zoom Selection**: Automatic optimization for different map types
 
 ### 🔍 **Feature Matching Service** 
 - **Dual Matching Engines**: 
@@ -45,15 +71,18 @@ feature_matching_api/
 - **Georeferencing**: Transfers coordinate systems via world files
 - **Buffer Optimization**: Automatically tests multiple buffer sizes
 
-### 🤖 **Map Classification Service**
-- **ResNet-50 Based**: Deep learning classifier for map type identification
-- **12 Map Categories**: BRT-A, TOP10, BAG, BGT variants, Luchtfoto, OSM, combinations
-- **Batch Processing**: Support for multiple images
-- **Confidence Scores**: Detailed prediction probabilities for all classes
-
 ### 🔄 **Combined Workflows**
 - **Cutout-and-Match**: Automatic buffer optimization with feature matching
 - **URL-based Processing**: Accept image URLs instead of file uploads
+- **Session Management**: Organized file handling with session-based storage
+- **Smart Caching**: Persistent model checkpoints to avoid re-downloading
+
+### ⚡ **Performance & Reliability**
+- **Memory Optimization**: Efficient memory usage with automatic cleanup
+- **CPU/GPU Support**: Automatic device detection for optimal performance
+- **Persistent Caching**: Model checkpoints cached between container restarts
+- **Error Handling**: Comprehensive error handling and logging
+- **Resource Management**: Configurable memory limits and optimization
 
 ## Quick Start
 
@@ -64,7 +93,7 @@ feature_matching_api/
 docker-compose up -d
 
 # Check health
-curl http://localhost:8002/health
+curl http://localhost:8005/health
 
 # Stop the service
 docker-compose down
@@ -75,14 +104,14 @@ docker-compose down
 ```bash
 # Build and run
 docker build -t map-ai .
-docker run -p 8002:8000 map-ai
+docker run -p 8005:8000 map-ai
 ```
 
 ### Access Points
 
-- **API Documentation**: http://localhost:8002/docs
-- **Health Check**: http://localhost:8002/health
-- **Root Endpoint**: http://localhost:8002/
+- **API Documentation**: http://localhost:8005/docs
+- **Health Check**: http://localhost:8005/health
+- **Root Endpoint**: http://localhost:8005/
 
 ## API Reference
 
@@ -101,116 +130,20 @@ If a PGW file is provided for the destination image, the output will be georefer
 **Parameters:**
 - `source_image` (File, required): Source image to be warped (PNG, JPG, TIFF, BMP)
 - `destination_image` (File, required): Destination/reference image (PNG, JPG, TIFF, BMP)
-- `destination_pgw` (File, optional): PGW file for destination image georeferencing
+- `destination_pgw` (File, required): PGW file for destination image georeferencing
 - `overlay_transparency` (float, default: 0.6): Overlay transparency (0.0-1.0)
-- `max_image_size` (int, default: 1500): Maximum image size for processing
 - `output_format` (string, default: "json"): Output format ("json" or "files")
+- `traffic_decree_id` (string, optional): Optional traffic decree ID for session naming
 
 **Example:**
 ```bash
-curl -X POST "http://localhost:8002/match-maps" \
+curl -X POST "http://localhost:8005/match-maps" \
   -F "source_image=@source.png" \
   -F "destination_image=@destination.png" \
   -F "destination_pgw=@destination.pgw" \
   -F "overlay_transparency=0.6" \
   -F "output_format=json"
 ```
-
-#### POST `/match-maps-with-size-reduction` ⚡ **NEW**
-
-Enhanced feature matching with size reduction optimization for faster processing.
-
-This endpoint performs feature matching on reduced-size images for speed, then applies the transformation to the full-resolution source image. This approach significantly reduces processing time while maintaining the same final quality.
-
-**Key Benefits:**
-- ⚡ **Faster Processing**: Up to 4x faster feature detection and matching
-- 💾 **Reduced Memory Usage**: Lower memory footprint during matching
-- 🎯 **Same Quality**: Automatic homography scaling maintains accuracy
-- 📏 **Flexible Sizing**: Configurable reduction level
-
-**Parameters:**
-- `source_image` (File, required): Source image to be warped (full resolution)
-- `destination_image` (File, required): Destination/reference image
-- `destination_pgw` (File, optional): PGW file for destination image georeferencing
-- `overlay_transparency` (float, default: 0.6): Overlay transparency (0.0-1.0)
-- `matching_image_size` (int, default: 800): Maximum dimension for matching phase
-
-**Example:**
-```bash
-curl -X POST "http://localhost:8005/match-maps-with-size-reduction" \
-  -F "source_image=@large_source.png" \
-  -F "destination_image=@destination.png" \
-  -F "destination_pgw=@destination.pgw" \
-  -F "overlay_transparency=0.6" \
-  -F "matching_image_size=800"
-```
-
-**Response includes timing and matching information:**
-```json
-{
-  "success": true,
-  "processing_time_seconds": 12.3,
-  "matching_image_size": 800,
-  "matches_count": 156,
-  "inlier_ratio": 0.847,
-  "files": {
-    "overlay_result": "/download/session_123/warped_overlay_result.png",
-    "warped_source": "/download/session_123/warped_source.png",
-    "feature_matches": "/download/session_123/feature_matches.png"
-  }
-}
-```
-
-#### POST `/quick-cutting-matching-georeferencing` ⚡ **ULTRA-FAST**
-
-Ultra-lightweight endpoint for quick cutting, matching, and georeferencing.
-
-This endpoint is optimized for **maximum speed and minimal memory usage**:
-- 🚀 **Ultra-Fast Processing**: Skips all overlay creation and unnecessary operations
-- 💾 **Minimal Memory**: Uses lightweight warping without overlay blending  
-- 🎯 **GeoTIFF Only**: Returns only the final georeferenced GeoTIFF download URL
-- 🔄 **Auto-Optimization**: Automatically finds optimal buffer size for best matches
-- ⚡ **Perfect for Production**: When you only need the final georeferenced result
-
-**Key Benefits:**
-- **Memory Efficient**: ~90% less memory usage compared to full workflow
-- **Speed Optimized**: ~70% faster processing time
-- **Clean Output**: Only essential GeoTIFF file, no overlays or visualizations
-- **Smart Buffering**: Tests multiple buffer sizes to find the best feature matches
-
-**Parameters:**
-- `source_image` (File, required): Source image to be warped and georeferenced
-- `geometry` (string, required): Geometry as GeoJSON, WKT, or coordinate list JSON string
-- `map_type` (string, required): Map type from supported list
-- `matching_image_size` (int, default: 800): Maximum dimension for matching phase
-
-**Example:**
-```bash
-curl -X POST "http://localhost:8005/quick-cutting-matching-georeferencing" \
-  -F "source_image=@source_cad.png" \
-  -F "geometry=POINT(136000 455000)" \
-  -F "map_type=bgt-omtrek" \
-  -F "matching_image_size=800"
-```
-
-**Ultra-Minimal Response (only what you need):**
-```json
-{
-  "success": true,
-  "geotiff_url": "/download/session_123/warped_source.tif",
-  "processing_time_seconds": 8.2,
-  "best_buffer_meters": 800,
-  "inlier_ratio": 0.847,
-  "session_id": "session_20250110_142301_123456"
-}
-```
-
-**Use Cases:**
-- Production workflows requiring only final georeferenced output
-- Batch processing of multiple CAD drawings
-- Integration with GIS systems that only need GeoTIFF files
-- Memory-constrained environments
-- High-throughput processing scenarios
 
 ### 2. Map Cutting Endpoints
 
@@ -222,7 +155,7 @@ Supports various geometry types (GeoJSON, WKT, coordinate lists) and multiple ma
 
 **Supported Map Types:**
 - **Basic maps**: osm, bgt-achtergrond, bgt-omtrek, bgt-standaard
-- **Aerial photography**: luchtfoto (Dutch high-resolution)
+- **Aerial photography**: luchtfoto, luchtfoto-2022 (Dutch high-resolution)
 - **Topographic maps**: brta, brta-omtrek, top10
 - **Buildings**: bag (BAG buildings layer)
 - **Overlay combinations**: bgt-bg-bag, bgt-bg-omtrek, brta-bag, brta-omtrek
@@ -232,10 +165,11 @@ Supports various geometry types (GeoJSON, WKT, coordinate lists) and multiple ma
 - `map_type` (string, default: "osm"): Map type from supported list
 - `buffer` (float, default: 800): Buffer distance in meters around geometry
 - `output_format` (string, default: "json"): Output format ("json" or "files")
+- `traffic_decree_id` (string, optional): Optional traffic decree ID for session naming
 
 **Example:**
 ```bash
-curl -X POST "http://localhost:8002/cut-out-georeferenced-map" \
+curl -X POST "http://localhost:8005/cut-out-georeferenced-map" \
   -F "geometry=POINT(136000 455000)" \
   -F "map_type=bgt-omtrek" \
   -F "buffer=500" \
@@ -249,9 +183,9 @@ curl -X POST "http://localhost:8002/cut-out-georeferenced-map" \
 Cut out a map section based on geometry and perform feature matching with automatic buffer optimization.
 
 This endpoint combines map cutting and feature matching with intelligent buffer selection:
-1. Automatically tests multiple buffer sizes (100m, 500m, 800m, 2000m) around the input geometry
+1. Automatically tests multiple buffer sizes around the input geometry
 2. Cuts out georeferenced map sections for each buffer size
-3. Performs KAZE feature matching for each buffer size
+3. Performs feature matching for each buffer size
 4. Selects the buffer size that produces the most inlier matches
 5. Returns the best matching results with detailed comparison data
 
@@ -261,10 +195,11 @@ This endpoint combines map cutting and feature matching with intelligent buffer 
 - `map_type` (string, required): Map type from supported list
 - `overlay_transparency` (float, default: 0.6): Overlay transparency (0.0-1.0)
 - `output_format` (string, default: "json"): Output format ("json" or "files")
+- `traffic_decree_id` (string, optional): Optional traffic decree ID for session naming
 
 **Example:**
 ```bash
-curl -X POST "http://localhost:8002/cutout-and-match" \
+curl -X POST "http://localhost:8005/cutout-and-match" \
   -F "source_image=@source.png" \
   -F "geometry=POINT(136000 455000)" \
   -F "map_type=osm" \
@@ -280,9 +215,9 @@ Cut out a map section based on geometry and perform feature matching with automa
 
 Same functionality as `/cutout-and-match` but accepts an image URL instead of file upload:
 1. Downloads the source image from the provided URL
-2. Automatically tests multiple buffer sizes (100m, 500m, 800m, 2000m) around the input geometry
+2. Automatically tests multiple buffer sizes around the input geometry
 3. Cuts out georeferenced map sections for each buffer size
-4. Performs KAZE feature matching for each buffer size
+4. Performs feature matching for each buffer size
 5. Selects the buffer size that produces the most inlier matches
 6. Returns the best matching results with detailed comparison data
 
@@ -292,10 +227,11 @@ Same functionality as `/cutout-and-match` but accepts an image URL instead of fi
 - `map_type` (string, required): Map type from supported list
 - `overlay_transparency` (float, default: 0.6): Overlay transparency (0.0-1.0)
 - `output_format` (string, default: "json"): Output format ("json" or "files")
+- `traffic_decree_id` (string, optional): Optional traffic decree ID for session naming
 
 **Example:**
 ```bash
-curl -X POST "http://localhost:8002/cutout-and-match-with-url" \
+curl -X POST "http://localhost:8005/cutout-and-match-with-url" \
   -F "image_url=https://example.com/image.png" \
   -F "geometry=POINT(136000 455000)" \
   -F "map_type=osm" \
@@ -305,61 +241,7 @@ curl -X POST "http://localhost:8002/cutout-and-match-with-url" \
 
 **Note:** When `output_format` is set to "files", the endpoint returns the GeoTIFF file of the warped source image instead of the overlay result.
 
-### 4. Map Classification Endpoints
-
-#### POST `/classify-map`
-
-Classify a map image into one of the trained map types.
-
-This endpoint uses a ResNet-50 based classifier trained on map images.
-Returns the predicted map type with confidence scores for all classes.
-
-**Parameters:**
-- `image` (File, required): Map image to classify (PNG, JPG, TIFF, BMP)
-- `output_format` (string, default: "json"): Output format ("json" only supported)
-
-**Example:**
-```bash
-curl -X POST "http://localhost:8002/classify-map" \
-  -F "image=@map_sample.png" \
-  -F "output_format=json"
-```
-
-#### POST `/classify`
-
-Classify a single image (simplified endpoint).
-
-**Parameters:**
-- `file` (File, required): Image file to classify
-
-**Example:**
-```bash
-curl -X POST "http://localhost:8002/classify" \
-  -F "file=@map_sample.png"
-```
-
-#### POST `/classify-batch`
-
-Classify multiple images in a single request.
-
-**Parameters:**
-- `files` (List[File], required): List of image files (max 10)
-
-**Example:**
-```bash
-curl -X POST "http://localhost:8002/classify-batch" \
-  -F "files=@image1.png" \
-  -F "files=@image2.png" \
-  -F "files=@image3.png"
-```
-
-#### GET `/classifier-info`
-
-Get information about the classifier model and available classes.
-
-Returns detailed information about the model architecture, available classes, preprocessing requirements, and usage instructions.
-
-### 5. Utility Endpoints
+### 4. Utility Endpoints
 
 #### GET `/`
 
@@ -371,15 +253,21 @@ Returns service status, version, timestamp, and available endpoints.
 
 Detailed health check endpoint.
 
-Returns comprehensive health status for all service components (matcher, cutter, classifier).
+Returns comprehensive health status for all service components (matcher, cutter).
 
-#### GET `/download/{session_id}/{filename}`
+#### GET `/download/{session_id}/{file_path:path}`
 
-Download processed files by session ID and filename.
+Download processed files by session ID and file path (supports subdirectories).
 
 **Parameters:**
 - `session_id` (string): Session identifier
-- `filename` (string): Filename to download
+- `file_path` (string): File path to download (supports subdirectories)
+
+**Example:**
+```bash
+curl "http://localhost:8005/download/session_123/warped_overlay_result.png" -o result.png
+curl "http://localhost:8005/download/session_123/buffer_500m_cutout/feature_matches.png" -o matches.png
+```
 
 #### GET `/sessions`
 
@@ -403,6 +291,7 @@ Clean up a specific session's files.
 | `bgt-omtrek` | Dutch BGT outline visualization | White background | Technical analysis, overlays |
 | `bgt-standaard` | Dutch BGT standard visualization | Default BGT styling | Standard BGT usage |
 | `luchtfoto` | Dutch aerial photography | Natural colors | High-resolution imagery |
+| `luchtfoto-2022` | Winter Dutch aerial photography | Natural colors (winter) | High-resolution winter imagery |
 | `brta` | BRT-A standard visualization | Topographic colors | Topographic mapping |
 | `brta-omtrek` | BRT-A grey visualization | Grey styling | Subdued topographic base |
 | `top10` | BRT-TOP10 NL | Topographic colors | Dutch topographic standard |
@@ -412,75 +301,24 @@ Clean up a specific session's files.
 | `brta-bag` | BRT-A + BAG buildings | Combined | Buildings on topographic |
 | `brta-omtrek` | BRT-A + BGT outline | Combined | Mixed topographic/BGT |
 
-## Classification Categories
-
-The classifier recognizes 12 map types:
-1. **BRT_A_standaard** - BRT-A standard topographic maps
-2. **BRT_TOP10_NL** - TOP10NL topographic maps
-3. **BAG_panden** - Building footprint maps
-4. **BGT_achtergrond** - BGT background visualization
-5. **BGT_standaard** - BGT standard visualization
-6. **BGT_omtrek** - BGT outline visualization
-7. **Luchtfoto** - Aerial photography
-8. **Open_streetmap** - OpenStreetMap tiles
-9. **Combinatie_BGT_achtergrond_BAG_panden** - BGT + BAG combination
-10. **Combinatie_BGT_achtergrond_omtrekgerichte_visualisatie** - BGT + outline combination
-11. **Combinatie_BRT_standaard_BAG_panden** - BRT-A + BAG combination
-12. **Combinatie_BRT_standaard_omtrekgerichte_visualisatie** - BRT-A + outline combination
-
-## Using the Modules Directly
-
-### Map Cutting
-
-```python
-from cutter import cut_map
-
-# Cut map with point geometry
-result = cut_map(
-    geometry_input=(136000, 455000),  # Utrecht center
-    map_type="bgt-omtrek",
-    output_dir="output"
-)
-
-# Cut map with complex geometry
-result = cut_map(
-    geometry_input={
-        "type": "LineString", 
-        "coordinates": [[136000, 455000], [136500, 455500]]
-    },
-    map_type="osm",
-    output_dir="output"
-)
-
-if result.success:
-    print(f"Map cutting successful!")
-    print(f"Image size: {result.image.shape}")
-    print(f"Bounds: {result.bounds}")
-```
-
-### Feature Matching
-
-```python
-from matcher import match_schematic_maps
-
-result = match_schematic_maps(
-    source_image_path="source.png",
-    destination_image_path="destination.png", 
-    output_dir="output",
-    overlay_transparency=0.6
-)
-
-if result.success:
-    print(f"Matches: {result.matches_count}")
-    print(f"Quality: {result.inlier_ratio:.1%}")
-```
-
 ## Technical Details
+
+### Service Architecture
+
+The refactored architecture separates concerns into distinct services:
+
+- **Feature Matching Service**: Handles KAZE and GIM+Roma matching algorithms
+- **Map Cutting Service**: Orchestrates tile downloading and map creation
+- **Tile Service**: Downloads and stitches tiles from various map sources
+- **Coordinate Transformation Service**: Handles coordinate system conversions
+- **Georeferencing Service**: Manages world file creation and GeoTIFF output
+- **Image Processing Service**: Handles image manipulation and optimization
+- **Visualization Service**: Creates overlays and result visualizations
 
 ### Geometric Buffering
 
 The service uses **true geometric buffering** via Shapely:
-- Creates actual 500m buffer around geometry shape
+- Creates actual buffer distances around geometry shapes
 - More accurate than rectangular bounding box buffering
 - Handles complex geometries properly (LineStrings, Polygons)
 - Buffer distance is consistent around entire geometry
@@ -496,7 +334,7 @@ For Dutch BGT (Basisregistratie Grootschalige Topografie):
 ### Coordinate Systems
 
 - **Input**: RD New (EPSG:28992) coordinates expected
-- **Output**: Georeferenced with world files (.pgw)
+- **Output**: Georeferenced with world files (.pgw) and GeoTIFF
 - **Internal**: Web Mercator (EPSG:3857) for tile fetching
 - **Transformations**: Automatic via pyproj
 
@@ -515,7 +353,8 @@ Optimized for satellite and aerial photography (luchtfoto):
 - **DINOv2 backbone**: Strong visual feature extraction
 - **Global-to-local matching**: Coarse-to-fine correspondence estimation
 - **Uncertainty estimation**: Robust matching with confidence scores
-- **GPU acceleration**: Automatic CUDA detection and usage
+- **CPU/GPU acceleration**: Automatic device detection and usage
+- **Persistent caching**: Model checkpoints cached between runs
 
 ## Quality Assessment
 
@@ -535,6 +374,8 @@ Optimized for satellite and aerial photography (luchtfoto):
 - `PORT`: Service port (default: 8000)
 - `UPLOAD_DIR`: Upload directory (default: "uploads")
 - `OUTPUT_DIR`: Output directory (default: "outputs")
+- `OMP_NUM_THREADS`: OpenMP thread limit (default: "1")
+- `MKL_NUM_THREADS`: MKL thread limit (default: "1")
 
 ## Development
 
@@ -545,11 +386,10 @@ Optimized for satellite and aerial photography (luchtfoto):
 pip install -r requirements.txt
 
 # Run the service
-python app.py
+python app_refactored.py
 
-# Test individual modules
-python cutter.py 136000 455000 500  # Test map cutting
-python matcher.py source.png dest.png  # Test feature matching
+# Test individual services
+python -c "from services.map_cutting_service import MapCuttingService; service = MapCuttingService(); print('Service initialized')"
 ```
 
 ### Dependencies
@@ -562,97 +402,8 @@ Key dependencies:
 - **pyproj**: Coordinate system transformations
 - **Pillow**: Image I/O and manipulation
 - **requests**: HTTP tile downloading
-- **rasterio**: GeoTIFF support (optional)
+- **rasterio**: GeoTIFF support
 - **huggingface_hub**: Model downloading for GIM+Roma
-
-## Migration Notes
-
-This service evolved from the original KAZE feature matching code:
-
-### What's New
-- ✅ **Map cutting service** with multiple sources
-- ✅ **BGT integration** for Dutch users
-- ✅ **Geometric buffering** for accurate buffer zones
-- ✅ **REST API** for easy integration
-- ✅ **Docker deployment** for consistency
-- ✅ **Fixed parameters** for simplified usage
-
-### What's Preserved
-- ✅ **KAZE feature matching** quality and settings
-- ✅ **Georeferencing** capabilities
-- ✅ **Quality assessment** algorithms
-- ✅ **Multiple image format** support
-
-The core functionality is enhanced with modern deployment practices and expanded capabilities for geographic workflows.
-
-## Training Data Generation
-
-### Generate Map Training Data
-
-Use the `generate_map_training_data.py` script to create datasets for machine learning or analysis:
-
-```bash
-# Generate training data for all map types
-python generate_map_training_data.py
-```
-
-**What it does:**
-- Generates **200 random samples** for each of the 13 map types
-- Uses **4 different buffer sizes**: 50m, 100m, 500m, 800m (50 samples each)
-- Creates **separate folders** for each map type
-- Places samples throughout the **Netherlands** (avoiding major water bodies)
-- **Ensures all locations are within 50m of roads** (using OpenStreetMap data)
-- Uses **proper coordinate conversion** (WGS84 → RD New)
-- Includes **logging and progress tracking**
-
-**Output structure:**
-```
-training_data/
-├── osm/                    # 200 OpenStreetMap samples
-├── bgt-achtergrond/        # 200 BGT background samples
-├── bgt-omtrek/             # 200 BGT outline samples
-├── bgt-standaard/          # 200 BGT standard samples
-├── luchtfoto/              # 200 aerial photo samples
-├── brta/                   # 200 BRT-A topographic samples
-├── brta-omtrek/            # 200 BRT-A outline samples
-├── top10/                  # 200 TOP10NL samples
-├── bag/                    # 200 BAG building samples
-├── bgt-bg-bag/             # 200 BGT+BAG overlay samples
-├── bgt-bg-omtrek/          # 200 BGT+outline overlay samples
-├── brta-bag/               # 200 BRT-A+BAG overlay samples
-└── brta-omtrek/            # 200 BRT-A+outline overlay samples
-```
-
-**Features:**
-- **Road proximity guarantee**: All locations within 50m of roads for visible infrastructure
-- **Respectful to APIs**: Rate-limited requests to tile servers and OpenStreetMap
-- **Geographic diversity**: Random coordinates across Netherlands
-- **Error handling**: Continues on failures, reports statistics
-- **Descriptive filenames**: Include map type, buffer size, sample number
-- **Images only**: PNG files without world files for clean datasets
-- **Comprehensive logging**: Progress and error tracking
-
-**Configuration:**
-You can modify the script parameters:
-```python
-SAMPLES_PER_MAP_TYPE = 200        # Total samples per map type
-BUFFER_SIZES = [50, 100, 500, 800]  # Buffer sizes in meters
-TARGET_WIDTH = 2048               # Output image width
-```
-
-**Usage notes:**
-- Script takes **several hours** to complete (2600+ total samples)
-- **Slower due to road checking**: Uses OpenStreetMap API for location validation
-- Can be **interrupted** safely with Ctrl+C
-- **Excluded from Docker**: Use locally for dataset creation
-- Generates **training_data_generation.log** for monitoring
-- **Requires internet**: Needs access to OpenStreetMap Overpass API
-
-This is useful for creating datasets for:
-- Map classification models
-- Feature detection training
-- Visual analysis of different map types
-- Geographic data science projects
 
 ## Model Attributions and Setup
 
@@ -678,6 +429,14 @@ This will:
 - Download the GIM+Roma model (`gim_roma_100h.ckpt`)
 - Apply CPU compatibility patch for Mac systems
 - Verify your PyTorch installation
+
+**Persistent Model Caching:**
+
+Models are cached in Docker volumes to avoid re-downloading:
+- **Hugging Face cache**: `/root/.cache/huggingface` (persistent Docker volume)
+- **Local checkpoints**: `./ROMA_checkpoints` (host directory mount)
+- **First run**: Downloads ~1.2GB of model data
+- **Subsequent runs**: Loads instantly from cache
 
 **CPU Compatibility for Mac Systems:**
 
@@ -763,4 +522,4 @@ This project includes several third-party components with their respective licen
 
 All third-party licenses are compatible with commercial use and do not impose restrictions on derivative works beyond standard attribution requirements.
 
-For complete license details, see the [NOTICE](./NOTICE) file. 
+For complete license details, see the [NOTICE](./NOTICE) file.
