@@ -444,7 +444,7 @@ class MapCuttingService:
         """
         if map_type.startswith("bgt-") or map_type in ["bag"]:
             # BGT and detailed map types are only available at zoom 13+, limit buffer sizes
-            return [20, 400, 800]  # Smaller buffers for detailed tile services
+            return [10, 100, 190]  # Smaller buffers for detailed tile services
         else:
             # OSM and other services support wider zoom ranges
             return [20, 800, 5000]  # Full range for OSM, luchtfoto and BRTA
