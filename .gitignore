@@ -1,0 +1,39 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Virtual environments
+venv/
+env/
+.env/
+
+# IDE settings
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Project-specific files to ignore
+test_endpoints.sh
+CORRECTED_DATA_MODELS.md
+DATA_MODELS_ARCHITECTURE.md
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Local data and output directories
+data/outputs/
+data/uploads/
+
+# Large model files and checkpoints that should be downloaded separately
+ROMA_checkpoints/
+
+# Logs
+*.log
