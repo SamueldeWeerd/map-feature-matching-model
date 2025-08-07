@@ -1,7 +1,7 @@
 """
 Response models for standardized API outputs
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional, Dict, List, Any
 from datetime import datetime
 from enum import Enum
@@ -126,22 +126,21 @@ class BaseResponse:
     """Base response structure for all API endpoints"""
     success: bool
     session_id: str
-    timestamp: str
+    timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
     error_message: Optional[str] = None
-    
-    def __post_init__(self):
-        """Ensure timestamp is set"""
-        if not hasattr(self, 'timestamp') or not self.timestamp:
-            self.timestamp = datetime.now().isoformat()
 
 
 @dataclass
-class FeatureMatchingResponse(BaseResponse):
+class FeatureMatchingResponse:
     """Standardized response for feature matching operations"""
+    success: bool
+    session_id: str
+    timestamp: str
     processing_info: FeatureMatchingProcessingInfo
-    output_files: Dict[str, FeatureMatchingFiles]  # {"feature_matching": FeatureMatchingFiles}
+    output_files: Dict[str, FeatureMatchingFiles] 
     georeferenced_files: List[GeoreferencedFile]
     quality_assessment: QualityAssessment
+    error_message: Optional[str] = None
     
     @classmethod
     def create_success_response(
@@ -189,11 +188,15 @@ class FeatureMatchingResponse(BaseResponse):
 
 
 @dataclass
-class MapCuttingResponse(BaseResponse):
+class MapCuttingResponse:
     """Standardized response for map cutting operations - COMPLETELY DIFFERENT from feature matching"""
+    success: bool
+    session_id: str
+    timestamp: str
     processing_info: MapCuttingProcessingInfo
     bounds_rd: Dict[str, float]
     files: MapCuttingFiles
+    error_message: Optional[str] = None
     
     @classmethod
     def create_success_response(
@@ -239,13 +242,17 @@ class MapCuttingResponse(BaseResponse):
 
 
 @dataclass
-class CutoutAndMatchResponse(BaseResponse):
+class CutoutAndMatchResponse:
     """Standardized response for cutout-and-match operations (combines both feature matching AND map cutting)"""
+    success: bool
+    session_id: str
+    timestamp: str
     processing_info: FeatureMatchingProcessingInfo  # Feature matching info
     output_files: Dict[str, FeatureMatchingFiles]   # {"feature_matching": FeatureMatchingFiles}
     georeferenced_files: List[GeoreferencedFile]
     map_cutting: MapCuttingProcessingInfo           # Map cutting info 
-    buffer_selection: Optional[BufferSelection] = None
+    error_message: Optional[str] = None
+    buffer_selection: Optional[BufferSelection] = None  # This one can actually be optional
     
     @classmethod
     def create_success_response(
@@ -317,9 +324,12 @@ class CutoutAndMatchResponse(BaseResponse):
 
 
 @dataclass
-class ErrorResponse(BaseResponse):
+class ErrorResponse:
     """Standardized error response"""
-    success: bool = False
+    success: bool
+    session_id: str
+    timestamp: str
+    error_message: Optional[str] = None
     
     @classmethod
     def create_error_response(
