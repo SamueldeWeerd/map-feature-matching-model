@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """
-Refactored FastAPI Orchestrator for Map AI Processing
+astAPI Orchestrator for Map AI Processing
 
-This is a demonstration of how the app.py can be refactored to separate
-concerns and make the code more maintainable.
+Application for processing maps with map-cutting and feature matching.
 """
 
 from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Depends
@@ -64,7 +63,7 @@ logger = logging.getLogger(__name__)
 # Initialize FastAPI app
 app = FastAPI(
     title="Map AI Processing Service",
-    description="A service for processing maps with feature matching, cutting, and classification",
+    description="A service for processing images of maps and performing automaticfeature matching and georeferencing",
     version="1.0.0"
 )
 
